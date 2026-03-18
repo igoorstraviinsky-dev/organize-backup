@@ -1,8 +1,56 @@
+# Dependências
 node_modules/
-.env
-server/.env
-agent/.env
-client/.env
-*.log
 dist/
 build/
+.next/
+.serverless/
+bin/
+obj/
+
+# Variáveis de Ambiente
+.env
+.env.local
+.env.production
+server/.env
+client/.env
+agent/.env
+
+# Python (Agente)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+debug_*.js
+test_*.js
+*.json-dump
+latest_payload_dump.json
+all_sse_logs*.json
+db_check_results.json
+raw_msg_debug.json
+sse-logs-dump.json
+test-msgs.json

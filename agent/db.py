@@ -32,18 +32,26 @@ async def get_user_id_by_phone(phone: str) -> Optional[str]:
         return None
     
     # Busca perfis que tenham telefone
-    res = _supabase.table("profiles").select("id, phone").not_.is_("phone", "null").execute()
+    res = _supabase.table("profiles").select("id, phone, role, approval_status").not_.is_("phone", "null").execute()
     
     for row in res.data:
-        db_phone = normalize_phone(row["phone"])
+        db_phone = normalize_phone(row.get("phone") or "")
         if not db_phone:
             continue
         
-        # Match exato ou parcial
+        # Match exato ou parcial (mínimo 8 dígitos para segurança)
         if db_phone == target or db_phone.endswith(target) or target.endswith(db_phone):
             if len(db_phone) >= 8 and len(target) >= 8:
-                return row["id"]
+                # Segurança: Apenas admins ou aprovados podem usar o agente
+                is_admin = row.get("role") == "admin"
+                is_approved = row.get("approval_status") == "approved"
+                
+                if is_admin or is_approved:
+                    return row["id"]
+                else:
+                    print(f"⚠️ Usuário {row.get('id')} ({phone}) bloqueado: não aprovado.")
     return None
+
 
 async def get_profile(user_id: str) -> Dict[str, Any]:
     res = _supabase.table("profiles").select("*").eq("id", user_id).single().execute()

@@ -32,15 +32,23 @@ const functionExecutors = {
 }
 
 function getBrPhoneVariants(rawPhone) {
-  const digits = String(rawPhone).replace(/[^0-9]/g, '');
+  let digits = String(rawPhone).replace(/[^0-9]/g, '');
+  
+  // Se o número tiver 10 ou 11 dígitos, é um número BR sem o 55. Adicionamos 55.
+  if (digits.length === 10 || (digits.length === 11 && /^[1-9]/.test(digits))) {
+    digits = '55' + digits;
+  }
+  
   const variants = new Set([digits]);
   if (digits.startsWith('55')) {
     const local = digits.slice(4);
+    // Variações com/sem o 9 extra (apenas para números com DDD + 8 ou 9 dígitos locais)
     if (digits.length === 13 && local.startsWith('9')) variants.add(digits.slice(0, 4) + local.slice(1));
     if (digits.length === 12 && /^[6-9]/.test(local)) variants.add(digits.slice(0, 4) + '9' + local);
   }
   return variants;
 }
+
 
 function brPhonesMatch(a, b) {
   const va = getBrPhoneVariants(a);
@@ -68,16 +76,39 @@ export async function processMessage(userMessage, phoneNumber, base64Image = nul
     let history = CHAT_MEMORY.get(phoneNumber) || [];
     const cleanPhone = phoneNumber.replace(/\D/g, '')
 
-    const { data: profiles } = await supabase.from('profiles').select('id, phone, full_name, role')
-    const currentUser = (profiles || []).find(p => p.phone && brPhonesMatch(cleanPhone, p.phone)) || null;
+    // Forçamos o select de approval_status para o check de segurança
+    const { data: profiles, error: pError } = await supabase.from('profiles').select('id, phone, full_name, role, approval_status')
+    
+    if (pError) {
+      console.error('[Security Guard] Erro ao buscar perfis:', pError.message)
+      throw new Error('Falha na autenticação do usuário no banco.')
+    }
+
+    // Busca o usuário com uma lógica mais flexível para números brasileiros
+    const currentUser = (profiles || []).find(p => {
+      if (!p.phone) return false;
+      // Normalizamos ambos para garantir comparação justa
+      return brPhonesMatch(cleanPhone, p.phone.replace(/\D/g, ''));
+    }) || null;
 
     if (!currentUser) {
       console.log(`[Security Guard] Bloqueio: Telefone ${phoneNumber} não cadastrado.`)
       return "Desculpe, você ainda não está cadastrado em nosso sistema. Por favor, acesse o Organizador Web e verifique seu cadastro ou entre em contato com o suporte para obter acesso.";
     }
 
+    // --- CHECK DE APROVAÇÃO ---
+    // Admins pulam a verificação de aprovação. Colaboradores precisam estar 'approved'.
+    const isAdmin = currentUser.role === 'admin';
+    const isApproved = currentUser.approval_status === 'approved';
+
+    if (!isAdmin && !isApproved) {
+      console.log(`[Security Guard] Bloqueio: Usuário ${currentUser.full_name} (${phoneNumber}) pendente de aprovação (Status: ${currentUser.approval_status}).`)
+      return `Olá ${currentUser.full_name}! Suas credenciais estão pendentes de aprovação pelo administrador. Por favor, aguarde a liberação do seu acesso.`;
+    }
+
     const { data: settings } = await supabase.from('ai_agent_settings').select('system_prompt, openai_api_key').eq('user_id', currentUser?.id).maybeSingle()
     const openaiKey = settings?.openai_api_key || process.env.OPENAI_API_KEY
+
     if (!openaiKey) throw new Error('OpenAI API Key não encontrada.')
     
     const ai = new OpenAI({ apiKey: openaiKey })

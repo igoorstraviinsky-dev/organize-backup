@@ -383,14 +383,22 @@ router.post('/webhook', async (req, res) => {
       if (agentSettings?.openai_api_key) {
         if (agentSettings.only_collaborators) {
           const cleanPhone = phone.replace(/\D/g, '')
-          const { data: isCollaborator } = await supabase
+          // Buscamos se o usuário existe, se é admin ou se está aprovado
+          const { data: profile } = await supabase
             .from('profiles')
-            .select('id')
+            .select('role, approval_status')
             .filter('phone', 'ilike', `%${cleanPhone}%`)
             .maybeSingle()
 
-          if (!isCollaborator) return
+          // Se não existir, ou se não for admin e não estiver aprovado, ignoramos
+          const canAccess = profile && (profile.role === 'admin' || profile.approval_status === 'approved');
+          
+          if (!canAccess) {
+            console.log(`[UazAPI Webhook] Bloqueio preventivo: Número ${phone} não autorizado ou não aprovado.`)
+            return
+          }
         }
+
 
         // O Node.js atua como o Cérebro centralizado.
         const { processMessage } = await import('../agent/openai.js')
